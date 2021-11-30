@@ -1,5 +1,7 @@
 # abx-race-2021
 
+[![DOI](https://zenodo.org/badge/432842870.svg)](https://zenodo.org/badge/latestdoi/432842870)
+
 ## To do
 
 - Add manuscript details
