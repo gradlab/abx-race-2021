@@ -1,14 +1,19 @@
 library(tidyverse)
 library(survey)
 
+# allow for singleton PSUs
 options(survey.lonely.psu = "adjust")
 
+# read in raw ICD code data
 raw_icd_codes <- read_rds("data/icd-codes.rds")
 
+# read in raw NAMCS/NHAMCS data
 raw_data <- read_rds("data/namcs-nhamcs.rds") %>%
   pull(data) %>%
   bind_rows()
 
+# ICD codes in NAMCS/NHAMCS are coded in a special way
+# this function converts from normal ICD codes to the NAMCS style
 icd_to_diag <- function(x) {
   # all codes should be length 3 (eg A00) or length 5 (eg A00.9)
   stopifnot(all(str_length(x) %in% c(3, 5)))
@@ -29,10 +34,13 @@ icd_to_diag <- function(x) {
 
 # test: "I10" -> "I10-"; "Z00.1" -> "Z001"
 # icd_to_diag(c("I10", "Z00.1"))
+
+# convert the ICD codes
 icd_codes <- raw_icd_codes %>%
   filter(str_length(ICD10_CODE) %in% c(3, 5)) %>%
   mutate(value = icd_to_diag(ICD10_CODE))
 
+# get a list of antibiotics based on Multum categories
 # from pg 275: https://ftp.cdc.gov/pub/Health_Statistics/NCHS/dataset_documentation/NHAMCS/doc18-ed-508.pdf
 abx_codes <- tribble(
   ~code, ~abx_group,
@@ -76,7 +84,9 @@ raw_data2 <- raw_data %>%
     # visit=1 is useful for counting #s of visits
     visit = 1,
     # cf slide 3: https://www.peppercenter.org/docs/StartWithData/Understanding_and_using_NAMCSandNHAMCS_data.pdf
-    racewt = PATWT / race_pop * 1e3
+    racewt = PATWT / race_pop * 1e3,
+    # a binary race variable will simplify comparisons later
+    is_white = as.integer(RACERETH == "Non-Hispanic White")
   ) %>%
   select(
     # variables to keep:
@@ -89,7 +99,7 @@ raw_data2 <- raw_data %>%
     # survey details
     YEAR, CSTRATM, CPSUM, YEAR, PATWT,
     # derived values
-    racewt, visit, id
+    id, visit, racewt, is_white
   )
 
 # for which visits were antibiotic prescribed?
@@ -100,6 +110,8 @@ abx_visit_ids <- raw_data2 %>%
   pull(id) %>%
   unique()
 
+# categorize antibiotic visits as appropriate, potentially appropriate, or
+# inappropriate
 abx_categories <- raw_data2 %>%
   filter(id %in% abx_visit_ids) %>%
   select(id, starts_with("DIAG")) %>%
@@ -147,6 +159,8 @@ tidy_svyby <- function(x, target) {
     rename(estimate := !!target)
 }
 
+# get rates of visits, visits with antibiotics, and visits with antibiotics
+# that are appropriate, potentially appropriate, inappropriate
 rates <- tibble(target = c("visit", "got_abx", "appropriate", "potentially", "inappropriate")) %>%
   mutate(
     formula = map(target, ~ as.formula(paste0("~", .))),
@@ -180,10 +194,8 @@ crossing(
     # compare this race against whites
     rows = map2(RACERETH, target, ~ data$RACERETH %in% c("Non-Hispanic White", ..1) & data[[..2]] == 1),
     this_design = map(rows, ~ subset(design, .)),
-    # create a formula for a t-test
-    formula = map(RACERETH, function(x) as.formula(as.character('I(RACERETH == "{x}") ~ 1'))),
     # run the t-test
-    test = map2(formula, this_design, svyttest),
+    test = map(this_design, ~ svyttest(is_white ~ 1, .)),
     result = map(test, broom::tidy)
   ) %>%
   select(RACERETH, target, result) %>%
@@ -208,11 +220,13 @@ rates %>%
   select(RACERETH, name = target, value = estimate) %>%
   pivot_wider() %>%
   mutate(
+    is_white = RACERETH == "Non-Hispanic White",
     abx_per_visit = got_abx / visit,
-    match_visits = abx_per_visit * visit[RACERETH == "Non-Hispanic White"],
-    match_apv = visit * abx_per_visit[RACERETH == "Non-Hispanic White"],
-    across(c(got_abx, match_visits, match_apv), ~ .[RACERETH == "Non-Hispanic White"] - .),
+    match_visits = abx_per_visit * visit[is_white],
+    match_apv = visit * abx_per_visit[is_white],
+    across(c(got_abx, match_visits, match_apv), ~ .[is_white] - .),
     across(c(match_visits, match_apv), ~ 1 - . / got_abx)
   ) %>%
   select(RACERETH, match_visits, match_apv) %>%
   mutate(across(!RACERETH, ~ scales::percent(., accuracy = 1)))
+
