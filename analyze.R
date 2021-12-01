@@ -152,60 +152,60 @@ design <- svydesign(
 )
 
 
-# healthcare and antibiotic use by race ----------------------------------------
+# get rates of visits ----------------------------------------------------------
 
-tidy_svyby <- function(x, target) {
-  as_tibble(x) %>%
-    rename(estimate := !!target)
-}
-
-# get rates of visits, visits with antibiotics, and visits with antibiotics
-# that are appropriate, potentially appropriate, inappropriate
-rates <- tibble(target = c("visit", "got_abx", "appropriate", "potentially", "inappropriate")) %>%
-  mutate(
-    formula = map(target, ~ as.formula(paste0("~", .))),
-    by_object = map(formula, function(x) svyby(x, by = ~RACERETH, design, svytotal, vartype = c("se", "ci"))),
-    result = map2(by_object, target, tidy_svyby)
-  ) %>%
-  select(target, result) %>%
-  unnest(cols = result)
-
-# make a pretty table
-format_result <- function(estimate, ci_l, ci_u, se) {
-  case_when(
-    se / estimate > 0.3 ~ "*",
-    TRUE ~ as.character(str_glue("{round(estimate)} ({round(ci_l)} to {round(ci_u)})"))
-  )
-}
-
-rates %>%
-  mutate(label = format_result(estimate, ci_l, ci_u, se)) %>%
-  select(target, name = RACERETH, value = label) %>%
-  pivot_wider()
-
+visit_rates <- svyby(~visit, by = ~RACERETH, design, svytotal, vartype = c("se", "ci")) %>%
+  as_tibble() %>%
+  mutate(target = "visit") %>%
+  rename(estimate = visit)
 
 # check for statistical significance: compare rates to whites
-crossing(
-  target = c("visit", "got_abx", "appropriate", "potentially", "inappropriate"),
-  RACERETH = levels(data$RACERETH)
-) %>%
-  filter(RACERETH != "Non-Hispanic White") %>%
+tibble(RACERETH = c("Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")) %>%
   mutate(
     # compare this race against whites
-    rows = map2(RACERETH, target, ~ data$RACERETH %in% c("Non-Hispanic White", ..1) & data[[..2]] == 1),
+    rows = map(RACERETH, ~ data$RACERETH %in% c("Non-Hispanic White", ..1)),
     this_design = map(rows, ~ subset(design, .)),
     # run the t-test
     test = map(this_design, ~ svyttest(is_white ~ 1, .)),
     result = map(test, broom::tidy)
   ) %>%
-  select(RACERETH, target, result) %>%
+  select(RACERETH, result) %>%
   unnest(cols = result) %>%
   # check for Benjamini-Hochberg-adjusted significance
   mutate(sig = p.adjust(p.value, "BH") < 0.01)
 
+
+# proportion of visits with abx ------------------------------------------------
+
+tidy_svy_by_ciprop <- function(x, target) {
+  as_tibble(x) %>%
+    rename(estimate := !!target) %>%
+    rename_with(function(x) str_replace(x, "^se\\..*", "se"))
+}
+
+abx_visits <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = c("se", "ci")) %>%
+  tidy_svy_by_ciprop("got_abx") %>%
+  mutate(
+    target = "got_abx",
+    across(where(is.numeric), ~ . * 100)
+  )
+
 # proportion of visits with abx did not vary by race
 svyciprop(~got_abx, design)
 svychisq(~RACERETH + got_abx, design)
+
+# appropriateness --------------------------------------------------------------
+  
+# proportion of abx visits that are appropriate, potentially appropriate, etc.
+appropriateness <- tibble(target = c("appropriate", "potentially", "inappropriate")) %>%
+  mutate(
+    formula = map(target, ~ as.formula(paste0("~", .))),
+    by_object = map(formula, function(x) svyby(x, by = ~RACERETH, subset(design, got_abx == 1), svyciprop, vartype = c("se", "ci"))),
+    result = map2(by_object, target, tidy_svy_by_ciprop)
+  ) %>%
+  select(target, result) %>%
+  unnest(cols = result) %>%
+  mutate(across(where(is.numeric), ~ . * 100))
 
 # appropriateness of an abx visit did not vary by race
 svyciprop(~appropriate, subset(design, got_abx == 1))
@@ -214,19 +214,38 @@ svyciprop(~inappropriate, subset(design, got_abx == 1))
 svychisq(~RACERETH + category, subset(design, got_abx == 1))
 
 
-# rate matching
-rates %>%
-  filter(target %in% c("visit", "got_abx")) %>%
+# make a pretty table ----------------------------------------------------------
+
+format_result <- function(estimate, ci_l, ci_u, se) {
+  case_when(
+    se / estimate > 0.3 ~ "*",
+    TRUE ~ as.character(str_glue("{round(estimate)} ({round(ci_l)} to {round(ci_u)})"))
+  )
+}
+
+bind_rows(visit_rates, abx_visits, appropriateness) %>%
+  mutate(label = format_result(estimate, ci_l, ci_u, se)) %>%
+  select(target, name = RACERETH, value = label) %>%
+  pivot_wider()
+
+
+# rate matching ----------------------------------------------------------------
+
+bind_rows(
+  visit = visit_rates,
+  got_abx = abx_visits,
+  .id = "target"
+) %>%
   select(RACERETH, name = target, value = estimate) %>%
   pivot_wider() %>%
   mutate(
     is_white = RACERETH == "Non-Hispanic White",
-    abx_per_visit = got_abx / visit,
-    match_visits = abx_per_visit * visit[is_white],
-    match_apv = visit * abx_per_visit[is_white],
-    across(c(got_abx, match_visits, match_apv), ~ .[is_white] - .),
-    across(c(match_visits, match_apv), ~ 1 - . / got_abx)
+    across(got_abx, ~ . / 100),
+    observed_abx = visit * got_abx,
+    match_abx = visit[is_white] * got_abx,
+    disparity = observed_abx[is_white] - observed_abx,
+    match_disparity = match_abx[is_white] - match_abx,
+    explained = 1 - match_disparity / disparity
   ) %>%
-  select(RACERETH, match_visits, match_apv) %>%
-  mutate(across(!RACERETH, ~ scales::percent(., accuracy = 1)))
-
+  select(RACERETH, explained) %>%
+  mutate(across(explained, ~ scales::percent(., accuracy = 1)))
