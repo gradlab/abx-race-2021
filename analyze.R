@@ -154,10 +154,47 @@ design <- svydesign(
 
 # get rates of visits ----------------------------------------------------------
 
-visit_rates <- svyby(~visit, by = ~RACERETH, design, svytotal, vartype = c("se", "ci")) %>%
+tidy_svy_by_total <- function(x, target) {
+  as_tibble(x) %>%
+    rename(estimate := !!target)
+}
+
+rates <- tibble(target = c("visit", "got_abx", "appropriate", "potentially", "inappropriate")) %>%
+  mutate(
+    formula = map(target, ~ as.formula(paste0("~", .))),
+    by_object = map(formula, function(x) svyby(x, by = ~RACERETH, design, svytotal, vartype = c("se", "ci"))),
+    result = map2(by_object, target, tidy_svy_by_total)
+  ) %>%
+  select(target, result) %>%
+  unnest(cols = result)
+
+prop_abx <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = c("se", "ci")) %>%
   as_tibble() %>%
-  mutate(target = "visit") %>%
-  rename(estimate = visit)
+  rename(estimate = got_abx, se = `se.as.numeric(got_abx)`) %>%
+  mutate(target = "got_abx")
+
+prop_approp <- tibble(target = c("appropriate", "potentially", "inappropriate")) %>%
+  mutate(
+    formula = map(target, ~ as.formula(paste0("~", .))),
+    by_object = map(formula, function(x) svyby(x, by = ~ RACERETH, subset(design, got_abx == 1), svyciprop, vartype = c("se", "ci"))),
+    result = map2(by_object, target, tidy_svy_by_ciprop)
+  ) %>%
+  select(target, result) %>%
+  unnest(cols = result)
+
+
+bind_rows(
+  rate = rates,
+  prop = bind_rows(prop_abx, prop_approp),
+  .id = "measure"
+) %>%
+  mutate(
+    across(where(is.numeric), ~ if_else(measure == "prop", . * 100, .)),
+    label = format_result(estimate, ci_l, ci_u, se)
+  ) %>%
+  select(target, RACERETH, name = measure, value = label) %>%
+  pivot_wider() %>%
+  print(n = Inf)
 
 # check for statistical significance: compare rates to whites
 tibble(RACERETH = c("Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")) %>%
