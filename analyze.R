@@ -86,7 +86,7 @@ raw_data2 <- raw_data %>%
     # cf slide 3: https://www.peppercenter.org/docs/StartWithData/Understanding_and_using_NAMCSandNHAMCS_data.pdf
     racewt = PATWT / race_pop * 1e3,
     # a binary race variable will simplify comparisons later
-    is_white = as.integer(RACERETH == "Non-Hispanic White")
+    is_white = if_else(RACERETH == "Non-Hispanic White", 1, -1)
   ) %>%
   select(
     # variables to keep:
@@ -196,21 +196,6 @@ bind_rows(
   pivot_wider() %>%
   print(n = Inf)
 
-# check for statistical significance: compare rates to whites
-tibble(RACERETH = c("Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")) %>%
-  mutate(
-    # compare this race against whites
-    rows = map(RACERETH, ~ data$RACERETH %in% c("Non-Hispanic White", ..1)),
-    this_design = map(rows, ~ subset(design, .)),
-    # run the t-test
-    test = map(this_design, ~ svyttest(is_white ~ 1, .)),
-    result = map(test, broom::tidy)
-  ) %>%
-  select(RACERETH, result) %>%
-  unnest(cols = result) %>%
-  # check for Benjamini-Hochberg-adjusted significance
-  mutate(sig = p.adjust(p.value, "BH") < 0.01)
-
 
 # proportion of visits with abx ------------------------------------------------
 
@@ -230,6 +215,7 @@ abx_visits <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = c("se
 # proportion of visits with abx did not vary by race
 svyciprop(~got_abx, design)
 svychisq(~RACERETH + got_abx, design)
+
 
 # appropriateness --------------------------------------------------------------
   
@@ -264,6 +250,33 @@ bind_rows(visit_rates, abx_visits, appropriateness) %>%
   mutate(label = format_result(estimate, ci_l, ci_u, se)) %>%
   select(target, name = RACERETH, value = label) %>%
   pivot_wider()
+
+
+# rate tests -------------------------------------------------------------------
+
+# is_white is 1 for whites and -1 for others. The t-test asks if the mean of that
+# variable is zero. Eg, for abx rates, ask for the mean of is_white across entries
+# with abx prescribed. If the mean of is_white is zero, it means rates of abx
+# use are equal across races
+crossing(
+  target = c("visit", "got_abx", "appropriate", "potentially", "inappropriate"),
+  RACERETH = c("Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")
+) %>%
+  mutate(
+    # look only at entries for this race, or whites
+    race_rows = map(RACERETH, ~ data$RACERETH %in% c("Non-Hispanic White", .)),
+    # look only in rows where the "target" is present
+    target_rows = map(target, ~ data[[.]] == 1),
+    rows = map2(race_rows, target_rows, `&`),
+    this_design = map(rows, ~ subset(design, .)),
+    # run the t-test
+    test = map(this_design, ~ svyttest(is_white ~ 1, .)),
+    result = map(test, broom::tidy)
+  ) %>%
+  select(target, RACERETH, result) %>%
+  unnest(cols = result) %>%
+  # check for Benjamini-Hochberg-adjusted significance
+  mutate(sig = p.adjust(p.value, "BH") < 0.01)
 
 
 # rate matching ----------------------------------------------------------------
