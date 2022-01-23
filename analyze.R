@@ -6,6 +6,7 @@ options(survey.lonely.psu = "adjust")
 
 # read in raw ICD code data
 raw_icd_codes <- read_rds("data/icd-codes.rds")
+additional_codes <- read_csv("data/additional-codes.csv")
 
 # read in raw NAMCS/NHAMCS data
 raw_data <- read_rds("data/namcs-nhamcs.rds") %>%
@@ -38,7 +39,8 @@ icd_to_diag <- function(x) {
 # convert the ICD codes
 icd_codes <- raw_icd_codes %>%
   filter(str_length(ICD10_CODE) %in% c(3, 5)) %>%
-  mutate(value = icd_to_diag(ICD10_CODE))
+  mutate(value = icd_to_diag(ICD10_CODE)) %>%
+  bind_rows(additional_codes)
 
 # get a list of antibiotics based on Multum categories
 # from pg 275: https://ftp.cdc.gov/pub/Health_Statistics/NCHS/dataset_documentation/NHAMCS/doc18-ed-508.pdf
@@ -79,7 +81,6 @@ race_populations <- tribble(
 raw_data2 <- raw_data %>%
   mutate(across(c(RACERETH), as_factor)) %>%
   left_join(race_populations, by = c("YEAR", "RACERETH")) %>%
-  left_join(white_populations, by = c("YEAR", "is_white")) %>%
   mutate(
     # an ID will be helpful for merging in abx use and appropriateness
     id = 1:n(),
@@ -110,13 +111,6 @@ abx_visit_ids <- raw_data2 %>%
   pull(id) %>%
   unique()
 
-
-missing_values <- raw_data2 %>%
-  select(starts_with("DIAG")) %>%
-  unlist(use.names = FALSE) %>%
-  unique() %>%
-  discard(~ . %in% icd_codes$value)
-
 # categorize visits as appropriate, potentially appropriate, or
 # inappropriate
 abx_categories <- raw_data2 %>%
@@ -133,8 +127,7 @@ abx_categories <- raw_data2 %>%
   mutate(name = case_when(
     always ~ "appropriate",
     sometimes ~ "potentially",
-    never ~ "inappropriate",
-    TRUE ~ "not_associated"
+    never ~ "inappropriate"
   )) %>%
   select(id, name) %>%
   mutate(value = 1, category = name) %>%
@@ -167,7 +160,7 @@ visits_by_race <- svyby(~visit, by = ~RACERETH, design, svytotal, vartype = "ci"
 visits_by_race_and_cat <- svyby(~visit, by = ~RACERETH + category, design, svytotal, vartype = "ci") %>%
   as_tibble()
 
-bind_rows(visits_by_race, visits_by_race_and_cat)
+visits <- bind_rows(visits_by_race, visits_by_race_and_cat)
 
 
 # test differences in visits ---------------------------------------------------
@@ -211,9 +204,25 @@ tests_by_race_and_cat <- crossing(
 ) %>%
   mutate(result = map2(race, category, test_visits_by_race_and_cat))
 
-bind_rows(tests_by_race, tests_by_race_and_cat) %>%
+test_results <- bind_rows(tests_by_race, tests_by_race_and_cat) %>%
   unnest_wider(result) %>%
   mutate(sig = p.adjust(p.value, "BH") < 0.01)
+
+
+# table of visit rate results --------------------------------------------------
+
+category_levels <- c("total", "appropriate", "potentially", "inappropriate")
+
+visits %>%
+  left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
+  mutate(
+    across(category, ~ factor(., levels = category_levels)),
+    across(where(is.numeric), ~ signif(., 2)),
+    sig_label = if_else(sig, "*", "", missing = ""),
+    label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
+  ) %>%
+  select(RACERETH, name = category, value = label) %>%
+  pivot_wider()
 
 
 # proportion of visit categories with abx --------------------------------------
@@ -226,7 +235,13 @@ abx_by_race_and_cat <- svyby(~got_abx, by = ~RACERETH + category, design, svycip
   as_tibble()
 
 bind_rows(abx_by_race, abx_by_race_and_cat) %>%
-  mutate(across(where(is.numeric), ~ signif(., 2) * 100))
+  mutate(
+    across(category, ~ factor(., levels = category_levels)),
+    across(where(is.numeric), ~ signif(., 2) * 100),
+    label = str_glue("{got_abx}% ({ci_l}% to {ci_u}%)")
+  ) %>%
+  select(RACERETH, name = category, value = label) %>%
+  pivot_wider()
 
 
 # test for proportions ---------------------------------------------------------
@@ -241,20 +256,3 @@ svychisq(~RACERETH + got_abx, design)
 svychisq(~RACERETH + got_abx, subset(design, category == "appropriate"))
 svychisq(~RACERETH + got_abx, subset(design, category == "potentially"))
 svychisq(~RACERETH + got_abx, subset(design, category == "inappropriate"))
-
-
-# make a pretty table ----------------------------------------------------------
-
-stop("not implemented")
-
-format_result <- function(estimate, ci_l, ci_u, se) {
-  case_when(
-    se / estimate > 0.3 ~ "*",
-    TRUE ~ as.character(str_glue("{round(estimate)} ({round(ci_l)} to {round(ci_u)})"))
-  )
-}
-
-bind_rows(visit_rates, abx_visits, appropriateness) %>%
-  mutate(label = format_result(estimate, ci_l, ci_u, se)) %>%
-  select(target, name = RACERETH, value = label) %>%
-  pivot_wider()
