@@ -70,23 +70,32 @@ race_populations <- tribble(
 ) %>%
   mutate(across(value, parse_number)) %>%
   pivot_wider() %>%
+  # compute non-hispanic other; drop non-hispanic all
   mutate(`Non-Hispanic Other` = `Non-Hispanic all races` - `Non-Hispanic White` - `Non-Hispanic Black`) %>%
+  select(-`Non-Hispanic all races`) %>%
   pivot_longer(!YEAR, names_to = "RACERETH", values_to = "race_pop") %>%
-  mutate(across(RACERETH, ~ factor(., levels = names(attr(raw_data$RACERETH, "labels"))))) %>%
-  filter(!is.na(RACERETH))
+  mutate(across(RACERETH, ~ factor(., levels = names(attr(raw_data$RACERETH, "labels")))))
+
+white_populations <- race_populations %>%
+  mutate(is_white = RACERETH == "Non-Hispanic White") %>%
+  group_by(YEAR, is_white) %>%
+  summarize(white_pop = sum(race_pop), .groups = "drop")
 
 raw_data2 <- raw_data %>%
-  mutate(across(c(RACERETH), as_factor)) %>%
+  mutate(
+    across(c(RACERETH), as_factor),
+    is_white = RACERETH == "Non-Hispanic White"
+  ) %>%
   left_join(race_populations, by = c("YEAR", "RACERETH")) %>%
+  left_join(white_populations, by = c("YEAR", "is_white")) %>%
   mutate(
     # an ID will be helpful for merging in abx use and appropriateness
     id = 1:n(),
     # visit=1 is useful for counting #s of visits
     visit = 1,
     # cf slide 3: https://www.peppercenter.org/docs/StartWithData/Understanding_and_using_NAMCSandNHAMCS_data.pdf
-    racewt = PATWT / race_pop * 1e3,
-    # a binary race variable will simplify comparisons later
-    is_white = if_else(RACERETH == "Non-Hispanic White", 1, -1)
+    racewt = PATWT / race_pop,
+    whitewt = PATWT / white_pop
   ) %>%
   select(
     # variables to keep:
@@ -99,7 +108,7 @@ raw_data2 <- raw_data %>%
     # survey details
     YEAR, CSTRATM, CPSUM, YEAR, PATWT,
     # derived values
-    id, visit, racewt, is_white
+    id, visit, racewt, is_white, whitewt
   )
 
 # for which visits were antibiotic prescribed?
@@ -110,10 +119,16 @@ abx_visit_ids <- raw_data2 %>%
   pull(id) %>%
   unique()
 
-# categorize antibiotic visits as appropriate, potentially appropriate, or
+
+missing_values <- raw_data2 %>%
+  select(starts_with("DIAG")) %>%
+  unlist(use.names = FALSE) %>%
+  unique() %>%
+  discard(~ . %in% icd_codes$value)
+
+# categorize visits as appropriate, potentially appropriate, or
 # inappropriate
 abx_categories <- raw_data2 %>%
-  filter(id %in% abx_visit_ids) %>%
   select(id, starts_with("DIAG")) %>%
   pivot_longer(!id) %>%
   # check here for missing codes
@@ -151,27 +166,55 @@ design <- svydesign(
   data = data
 )
 
+white_design <- svydesign(
+  ids = ~CPSUM,
+  strata = ~CSTRATM,
+  weights = ~whitewt,
+  nest = TRUE,
+  data = data
+)
 
 # get rates of visits ----------------------------------------------------------
 
-tidy_svy_by_total <- function(x, target) {
-  as_tibble(x) %>%
-    rename(estimate := !!target)
-}
-
-rates <- tibble(target = c("visit", "got_abx", "appropriate", "potentially", "inappropriate")) %>%
-  mutate(
-    formula = map(target, ~ as.formula(paste0("~", .))),
-    by_object = map(formula, function(x) svyby(x, by = ~RACERETH, design, svytotal, vartype = c("se", "ci"))),
-    result = map2(by_object, target, tidy_svy_by_total)
-  ) %>%
-  select(target, result) %>%
-  unnest(cols = result)
-
-prop_abx <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = c("se", "ci")) %>%
+visits_by_race <- svyby(~visit, by = ~RACERETH, design, svytotal, vartype = "ci") %>%
   as_tibble() %>%
-  rename(estimate = got_abx, se = `se.as.numeric(got_abx)`) %>%
-  mutate(target = "got_abx")
+  mutate(category = "total")
+
+visits_by_race_and_cat <- svyby(~visit, by = ~RACERETH + category, design, svytotal, vartype = "ci") %>%
+  as_tibble()
+
+bind_rows(visits_by_race, visits_by_race_and_cat)
+
+# test differences in visits ---------------------------------------------------
+
+
+
+
+summary(svyglm(visit ~ RACERETH, design))
+svymean(~RACERETH, design)
+
+svyttest(visit ~ RACERETH, subset(design, RACERETH %in% c("Non-Hispanic White", "Non-Hispanic Black")))
+
+# proportion of visit categories with abx --------------------------------------
+
+abx_by_race <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = "ci") %>%
+  as_tibble() %>%
+  mutate(category = "total")
+
+abx_by_race_and_cat <- svyby(~got_abx, by = ~RACERETH + category, design, svyciprop, vartype = "ci") %>%
+  as_tibble()
+
+bind_rows(abx_by_race, abx_by_race_and_cat) %>%
+  mutate(across(where(is.numeric), ~ signif(., 2) * 100))
+
+# proportion of visits with abx did not vary by race
+svyciprop(~got_abx, design)
+svychisq(~RACERETH + got_abx, design)
+svychisq(~RACERETH + got_abx, subset(design, category == "appropriate"))
+svychisq(~RACERETH + got_abx, subset(design, category == "potentially"))
+svychisq(~RACERETH + got_abx, subset(design, category == "inappropriate"))
+
+summary(svyglm(got_abx ~ RACERETH, design, family = quasibinomial))
 
 prop_approp <- tibble(target = c("appropriate", "potentially", "inappropriate")) %>%
   mutate(
@@ -212,9 +255,7 @@ abx_visits <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = c("se
     across(where(is.numeric), ~ . * 100)
   )
 
-# proportion of visits with abx did not vary by race
-svyciprop(~got_abx, design)
-svychisq(~RACERETH + got_abx, design)
+
 
 
 # appropriateness --------------------------------------------------------------
@@ -278,6 +319,17 @@ crossing(
   # check for Benjamini-Hochberg-adjusted significance
   mutate(sig = p.adjust(p.value, "BH") < 0.01)
 
+d <- design %>%
+  subset(RACERETH %in% c("Non-Hispanic White", "Non-Hispanic Black") & got_abx) %>%
+  update(y = if_else(RACERETH == "Non-Hispanic White", 1, -1))
+
+svyglm(is_white ~ 1, design = d, family = quasibinomial) %>% summary()
+svymean(~is_white, d, vartype = "ci")
+svyttest(y ~ 0, d)
+
+svyby(~dummy, by=~RACERETH, update(design, dummy = 1), svytotal)
+svyby(~inappropriate, by=~RACERETH, design, svytotal, vartype = "ci")
+svyby(~got_abx, by=~RACERETH, subset(design, inappropriate==1), svyciprop, vartype = "ci")
 
 # rate matching ----------------------------------------------------------------
 
