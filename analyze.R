@@ -212,6 +212,7 @@ test_results <- bind_rows(tests_by_race, tests_by_race_and_cat) %>%
 # table of visit rate results --------------------------------------------------
 
 category_levels <- c("total", "appropriate", "potentially", "inappropriate")
+race_levels <- c("Non-Hispanic White", "Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")
 
 visits %>%
   left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
@@ -222,8 +223,26 @@ visits %>%
     label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
   ) %>%
   select(RACERETH, name = category, value = label) %>%
-  pivot_wider()
+  pivot_wider() %>%
+  select(all_of(c("RACERETH", category_levels)))
 
+visits %>%
+  left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
+  mutate(
+    across(RACERETH, ~ factor(., levels = race_levels)),
+    across(category, ~ factor(., levels = category_levels)),
+    sig_label = if_else(sig, "*", "", missing = ""),
+    label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
+  ) %>%
+  ggplot(aes(category, visit, fill = RACERETH)) +
+  geom_col(position = "dodge") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = "dodge") +
+  geom_text(aes(label = sig_label, y = ci_u + 0.1), position = position_dodge(width = 0.9)) +
+  labs(
+    title = "Visits by race",
+    x = "Diagnostic category",
+    y = "Annual visits per capita"
+  )
 
 # proportion of visit categories with abx --------------------------------------
 
@@ -241,7 +260,23 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
     label = str_glue("{got_abx}% ({ci_l}% to {ci_u}%)")
   ) %>%
   select(RACERETH, name = category, value = label) %>%
-  pivot_wider()
+  pivot_wider() %>%
+  select(all_of(c("RACERETH", category_levels)))
+
+bind_rows(abx_by_race, abx_by_race_and_cat) %>%
+  mutate(
+    across(category, ~ factor(., levels = category_levels)),
+    across(RACERETH, ~ factor(., levels = race_levels)),
+  ) %>%
+  ggplot(aes(category, got_abx, fill = RACERETH)) +
+  geom_col(position = "dodge") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = "dodge") +
+  scale_y_continuous(labels = partial(scales::percent, accuracy = 1)) +
+  labs(
+    title = "Antibiotics by race",
+    x = "Diagnostic category",
+    y = "Proportion of visits with antibiotics"
+  )
 
 
 # test for proportions ---------------------------------------------------------
