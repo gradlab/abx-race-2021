@@ -212,25 +212,26 @@ test_results <- bind_rows(tests_by_race, tests_by_race_and_cat) %>%
 # table of visit rate results --------------------------------------------------
 
 category_levels <- c("total", "appropriate", "potentially", "inappropriate")
+category_labels <- c("All visits", "Antibiotic-appropriate visits", "Sometimes antibiotic-appropriate visits", "Antibiotic-inappropriate visits")
 race_levels <- c("Non-Hispanic White", "Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")
 
 visits %>%
   left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
   mutate(
-    across(category, ~ factor(., levels = category_levels)),
+    across(category, ~ factor(., levels = category_levels, labels = category_labels)),
     across(where(is.numeric), ~ signif(., 2)),
     sig_label = if_else(sig, "*", "", missing = ""),
     label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
   ) %>%
   select(RACERETH, name = category, value = label) %>%
   pivot_wider() %>%
-  select(all_of(c("RACERETH", category_levels)))
+  select(all_of(c("RACERETH", category_labels)))
 
 visits %>%
   left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
   mutate(
+    across(category, ~ factor(., levels = category_levels, labels = category_labels)),
     across(RACERETH, ~ factor(., levels = race_levels)),
-    across(category, ~ factor(., levels = category_levels)),
     sig_label = if_else(sig, "*", "", missing = ""),
     label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
   ) %>%
@@ -239,10 +240,13 @@ visits %>%
   geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = "dodge") +
   geom_text(aes(label = sig_label, y = ci_u + 0.1), position = position_dodge(width = 0.9)) +
   labs(
-    title = "Visits by race",
-    x = "Diagnostic category",
-    y = "Annual visits per capita"
-  )
+    y = "Annual visits per capita",
+    fill = "Race/ethnicity"
+  ) +
+  scale_y_continuous(limits = c(0, 8), expand = c(0, 0)) +
+  colorspace::scale_fill_discrete_qualitative(palette = "Dark3") +
+  cowplot::theme_cowplot() +
+  theme(axis.title.x = element_blank())
 
 # proportion of visit categories with abx --------------------------------------
 
@@ -265,18 +269,24 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
 
 bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   mutate(
-    across(category, ~ factor(., levels = category_levels)),
+    across(category, ~ factor(., levels = category_levels, labels = category_labels)),
     across(RACERETH, ~ factor(., levels = race_levels)),
   ) %>%
   ggplot(aes(category, got_abx, fill = RACERETH)) +
   geom_col(position = "dodge") +
   geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = "dodge") +
-  scale_y_continuous(labels = partial(scales::percent, accuracy = 1)) +
+  scale_y_continuous(
+    labels = partial(scales::percent, accuracy = 1),
+    limits = c(0, 0.55),
+    expand = c(0, 0)
+  ) +
   labs(
-    title = "Antibiotics by race",
-    x = "Diagnostic category",
-    y = "Proportion of visits with antibiotics"
-  )
+    y = "Proportion of visits with antibiotics",
+    fill = "Race/ethnicity"
+  ) +
+  colorspace::scale_fill_discrete_qualitative(palette = "Dark3") +
+  cowplot::theme_cowplot() +
+  theme(axis.title.x = element_blank())
 
 
 # test for proportions ---------------------------------------------------------
