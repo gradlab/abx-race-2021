@@ -244,7 +244,7 @@ visits %>%
     fill = "Race/ethnicity"
   ) +
   scale_y_continuous(limits = c(0, 8), expand = c(0, 0)) +
-  colorspace::scale_fill_discrete_qualitative(palette = "Dark3") +
+  scale_fill_manual(values = unname(palette.colors(4))) +
   cowplot::theme_cowplot() +
   theme(axis.title.x = element_blank())
 
@@ -284,7 +284,7 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
     y = "Proportion of visits with antibiotics",
     fill = "Race/ethnicity"
   ) +
-  colorspace::scale_fill_discrete_qualitative(palette = "Dark3") +
+  scale_fill_manual(values = unname(palette.colors(4))) +
   cowplot::theme_cowplot() +
   theme(axis.title.x = element_blank())
 
