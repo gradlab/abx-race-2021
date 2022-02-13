@@ -165,9 +165,9 @@ visits <- bind_rows(visits_by_race, visits_by_race_and_cat)
 
 # test differences in visits ---------------------------------------------------
 
-# y is 1 for whites and -1 for others. The t-test asks if the mean of that
+# y is -1 for whites and 1 for others. The t-test asks if the mean of that
 # variable is zero, ie, whether, rates of visits are equal across two races
-test_design <- update(design, y = if_else(RACERETH == "Non-Hispanic White", 1, -1))
+test_design <- update(design, y = if_else(RACERETH == "Non-Hispanic White", -1, 1))
 
 test_total <- function(d) {
   st <- svytotal(~y, d)
@@ -206,13 +206,27 @@ tests_by_race_and_cat <- crossing(
 
 test_results <- bind_rows(tests_by_race, tests_by_race_and_cat) %>%
   unnest_wider(result) %>%
-  mutate(sig = p.adjust(p.value, "BH") < 0.01)
+  mutate(sig = p.value < 0.01)
+
+
+# antibiotic visit rates -------------------------------------------------------
+
+svyby(~got_abx, by = ~RACERETH, design, svytotal, vartype = "ci")
+
+test_abx_visits_by_race <- function(race) {
+  test_total(subset(test_design, got_abx & RACERETH %in% c(race, "Non-Hispanic White")))
+}
+
+abx_tests_by_race <- tibble(race = test_races) %>%
+  mutate(result = map(race, test_abx_visits_by_race)) %>%
+  unnest_wider(result) %>%
+  mutate(sig = p.value < 0.01)
 
 
 # table of visit rate results --------------------------------------------------
 
 category_levels <- c("total", "appropriate", "potentially", "inappropriate")
-category_labels <- c("All visits", "Antibiotic-appropriate visits", "Sometimes antibiotic-appropriate visits", "Antibiotic-inappropriate visits")
+category_labels <- c("All visits", "Antibiotic-\nappropropriate\nvisits", "Sometimes\nantibiotic-appropriate\nvisits", "Antibiotic-\ninappropriate\nvisits")
 race_levels <- c("Non-Hispanic White", "Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")
 
 visits %>%
@@ -227,6 +241,8 @@ visits %>%
   pivot_wider() %>%
   select(all_of(c("RACERETH", category_labels)))
 
+my_palette  <- c("#FFFFFF", "#009E73", "#F0E442", "#E69F00", "#56B4E9", "#0072B2", "#D55E00", "#CC79A7")
+
 visits %>%
   left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
   mutate(
@@ -236,17 +252,24 @@ visits %>%
     label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
   ) %>%
   ggplot(aes(category, visit, fill = RACERETH)) +
-  geom_col(position = "dodge") +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = "dodge") +
+  geom_col(position = position_dodge(width = 0.9), color = "black") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = position_dodge(width = 0.9), width = 0.5) +
   geom_text(aes(label = sig_label, y = ci_u + 0.1), position = position_dodge(width = 0.9)) +
   labs(
     y = "Annual visits per capita",
     fill = "Race/ethnicity"
   ) +
-  scale_y_continuous(limits = c(0, 8), expand = c(0, 0)) +
-  scale_fill_manual(values = unname(palette.colors(4))) +
+  scale_y_continuous(limits = c(0, 8), expand = c(0, 0), breaks = 0:8) +
+  scale_fill_manual(values = my_palette) +
   cowplot::theme_cowplot() +
-  theme(axis.title.x = element_blank())
+  theme(
+    axis.title.x = element_blank(),
+    legend.position = c(0.35, 0.85),
+    axis.ticks.x = element_blank()
+  )
+
+ggsave("fig1.png", width = 7, height = 5)
+
 
 # proportion of visit categories with abx --------------------------------------
 
@@ -273,26 +296,38 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
     across(RACERETH, ~ factor(., levels = race_levels)),
   ) %>%
   ggplot(aes(category, got_abx, fill = RACERETH)) +
-  geom_col(position = "dodge") +
-  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = "dodge") +
+  geom_col(position = position_dodge(width = 0.9), color = "black") +
+  geom_errorbar(aes(ymin = ci_l, ymax = ci_u), position = position_dodge(width = 0.9), width = 0.5) +
   scale_y_continuous(
     labels = partial(scales::percent, accuracy = 1),
     limits = c(0, 0.55),
     expand = c(0, 0)
   ) +
+  scale_fill_manual(values = my_palette) +
   labs(
     y = "Proportion of visits with antibiotics",
     fill = "Race/ethnicity"
   ) +
-  scale_fill_manual(values = unname(palette.colors(4))) +
   cowplot::theme_cowplot() +
-  theme(axis.title.x = element_blank())
+  theme(
+    axis.title.x = element_blank(),
+    legend.position = c(0.65, 0.85),
+    axis.ticks.x = element_blank()
+  )
+
+ggsave("fig2.png", width = 7, height = 5)
 
 
 # test for proportions ---------------------------------------------------------
 
 # baseline % of visits with abx
 svyciprop(~got_abx, design)
+
+# and by race
+svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = "ci") %>%
+  as_tibble() %>%
+  mutate(across(!RACERETH, ~ scales::percent(., accuracy = 0.1)))
+  
 
 # that baseline does not vary by race
 svychisq(~RACERETH + got_abx, design)
