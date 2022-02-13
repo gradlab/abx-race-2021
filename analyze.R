@@ -1,5 +1,6 @@
 library(tidyverse)
 library(survey)
+library(cowplot)
 
 # allow for singleton PSUs
 options(survey.lonely.psu = "adjust")
@@ -243,7 +244,7 @@ visits %>%
 
 my_palette  <- c("#FFFFFF", "#009E73", "#F0E442", "#E69F00", "#56B4E9", "#0072B2", "#D55E00", "#CC79A7")
 
-visits %>%
+visits_plot <- visits %>%
   left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
   mutate(
     across(category, ~ factor(., levels = category_levels, labels = category_labels)),
@@ -261,14 +262,14 @@ visits %>%
   ) +
   scale_y_continuous(limits = c(0, 8), expand = c(0, 0), breaks = 0:8) +
   scale_fill_manual(values = my_palette) +
-  cowplot::theme_cowplot() +
+  theme_cowplot() +
   theme(
     axis.title.x = element_blank(),
-    legend.position = c(0.35, 0.85),
+    legend.position = c(0.35, 0.75),
     axis.ticks.x = element_blank()
   )
 
-ggsave("fig1.png", width = 7, height = 5)
+show(visits_plot)
 
 
 # proportion of visit categories with abx --------------------------------------
@@ -290,7 +291,7 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   pivot_wider() %>%
   select(all_of(c("RACERETH", category_levels)))
 
-bind_rows(abx_by_race, abx_by_race_and_cat) %>%
+abx_plot <- bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   mutate(
     across(category, ~ factor(., levels = category_levels, labels = category_labels)),
     across(RACERETH, ~ factor(., levels = race_levels)),
@@ -305,17 +306,21 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   ) +
   scale_fill_manual(values = my_palette) +
   labs(
-    y = "Proportion of visits with antibiotics",
+    y = "% of visits with antibiotics",
     fill = "Race/ethnicity"
   ) +
-  cowplot::theme_cowplot() +
+  theme_cowplot() +
   theme(
     axis.title.x = element_blank(),
-    legend.position = c(0.65, 0.85),
+    legend.position = "none",
     axis.ticks.x = element_blank()
   )
 
-ggsave("fig2.png", width = 7, height = 5)
+show(abx_plot)
+
+plot_grid(visits_plot, abx_plot, labels = "auto", ncol = 1)
+
+ggsave("fig.png", width = 7, height = 7)
 
 
 # test for proportions ---------------------------------------------------------
