@@ -1,6 +1,7 @@
 library(tidyverse)
 library(survey)
 library(cowplot)
+library(scales)
 
 # allow for singleton PSUs
 options(survey.lonely.psu = "adjust")
@@ -210,20 +211,6 @@ test_results <- bind_rows(tests_by_race, tests_by_race_and_cat) %>%
   mutate(sig = p.value < 0.01)
 
 
-# antibiotic visit rates -------------------------------------------------------
-
-svyby(~got_abx, by = ~RACERETH, design, svytotal, vartype = "ci")
-
-test_abx_visits_by_race <- function(race) {
-  test_total(subset(test_design, got_abx & RACERETH %in% c(race, "Non-Hispanic White")))
-}
-
-abx_tests_by_race <- tibble(race = test_races) %>%
-  mutate(result = map(race, test_abx_visits_by_race)) %>%
-  unnest_wider(result) %>%
-  mutate(sig = p.value < 0.01)
-
-
 # table of visit rate results --------------------------------------------------
 
 category_levels <- c("total", "appropriate", "potentially", "inappropriate")
@@ -231,16 +218,25 @@ category_labels <- c("All visits", "Antibiotic-\nappropropriate\nvisits", "Somet
 race_levels <- c("Non-Hispanic White", "Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")
 
 visits %>%
-  left_join(select(test_results, RACERETH = race, category, sig), by = c("RACERETH", "category")) %>%
+  left_join(test_results, by = c("RACERETH" = "race", "category")) %>%
   mutate(
-    across(category, ~ factor(., levels = category_levels, labels = category_labels)),
-    across(where(is.numeric), ~ signif(., 2)),
+    # round everything to 2 sigfigs
+    across(where(is.numeric), signif, digits = 2),
+    # create a label for visit rates
+    visit_label = str_glue("{visit} ({ci_l.x} to {ci_u.x})"),
+    # create a label for differences in rates
+    across(c(estimate, ci_l.y, ci_u.y), ~ -.),
     sig_label = if_else(sig, "*", "", missing = ""),
-    label = str_glue("{visit} ({ci_l} to {ci_u}){sig_label}")
+    diff_label = str_glue("{estimate} ({ci_l.y} to {ci_u.y}){sig_label}"),
+    # get the category factors in order
+    across(RACERETH, factor, levels = race_levels),
+    across(category, factor, levels = category_levels)
   ) %>%
-  select(RACERETH, name = category, value = label) %>%
-  pivot_wider() %>%
-  select(all_of(c("RACERETH", category_labels)))
+  select(category, RACERETH, visit = visit_label, diff = diff_label) %>%
+  arrange(category, RACERETH)
+
+
+# plot of visit rate results ---------------------------------------------------
 
 my_palette  <- c("#FFFFFF", "#009E73", "#F0E442", "#E69F00", "#56B4E9", "#0072B2", "#D55E00", "#CC79A7")
 
@@ -332,7 +328,6 @@ svyciprop(~got_abx, design)
 svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = "ci") %>%
   as_tibble() %>%
   mutate(across(!RACERETH, ~ scales::percent(., accuracy = 0.1)))
-  
 
 # that baseline does not vary by race
 svychisq(~RACERETH + got_abx, design)
@@ -341,3 +336,52 @@ svychisq(~RACERETH + got_abx, design)
 svychisq(~RACERETH + got_abx, subset(design, category == "appropriate"))
 svychisq(~RACERETH + got_abx, subset(design, category == "potentially"))
 svychisq(~RACERETH + got_abx, subset(design, category == "inappropriate"))
+
+
+# rates of visits with antibiotics ------------------------------------
+
+# antibiotic visit rates -------------------------------------------------------
+
+abx_visits_by_race <- svyby(~got_abx, by = ~RACERETH, design, svytotal, vartype = "ci") %>%
+  as_tibble() %>%
+  mutate(category = "total")
+
+abx_visits_by_race_and_cat <- svyby(~got_abx, by = ~RACERETH + category, design, svytotal, vartype = "ci") %>%
+  as_tibble()
+
+test_abx_visits_by_race <- function(race) {
+  test_total(subset(test_design, got_abx & RACERETH %in% c(race, "Non-Hispanic White")))
+}
+
+test_abx_visits_by_race_and_cat <- function(race, cat) {
+  test_total(subset(test_design, got_abx & RACERETH %in% c(race, "Non-Hispanic White") & category == cat))
+}
+
+abx_tests_by_race <- tibble(race = test_races) %>%
+  mutate(result = map(race, test_abx_visits_by_race)) %>%
+  unnest_wider(result) %>%
+  mutate(category = "total")
+
+abx_tests_by_race_and_cat <- crossing(
+  race = test_races,
+  category = c("appropriate", "potentially", "inappropriate")
+) %>%
+  mutate(result = map2(race, category, test_abx_visits_by_race_and_cat)) %>%
+  unnest_wider(result)
+
+left_join(
+  bind_rows(abx_visits_by_race, abx_visits_by_race_and_cat),
+  bind_rows(abx_tests_by_race, abx_tests_by_race_and_cat),
+  by = c("RACERETH" = "race", "category")
+) %>%
+  mutate(
+    across(c(estimate, ci_l.y, ci_u.y), ~ -.),
+    across(where(is.numeric), signif, digits = 2),
+    sig_label = if_else(p.value < 0.01, "*", ""),
+    rate_label = str_glue("{got_abx} ({ci_l.x} to {ci_u.x})"),
+    diff_label = str_glue("{estimate} ({ci_u.y} to {ci_l.y}){sig_label}"),
+    across(category, factor, levels = category_levels),
+    across(RACERETH, factor, levels = race_levels)
+  ) %>%
+  select(category, RACERETH, rate = rate_label, diff = diff_label) %>%
+  arrange(category, RACERETH)
