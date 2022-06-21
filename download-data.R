@@ -4,12 +4,23 @@ library(readxl)
 
 # download a Stata file from a url, unzip it, and read it into memory
 download_stata_data <- function(url) {
+  # download
   tf <- tempfile()
   download.file(url, tf)
+
+  # unzip
   fn <- unzip(tf, list = TRUE)$Name[1]
   con <- unz(tf, fn, open = "rb")
+
+  # read in data
   data <- read_stata(con)
+
+  # clean up
   close(con)
+  unlink(tf)
+  unlink(fn)
+
+  # return data
   data
 }
 

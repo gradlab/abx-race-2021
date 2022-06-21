@@ -6,6 +6,8 @@ library(scales)
 # allow for singleton PSUs
 options(survey.lonely.psu = "adjust")
 
+# load data -----------------------------------------------------------
+
 # read in raw ICD code data
 raw_icd_codes <- read_rds("data/icd-codes.rds")
 additional_codes <- read_csv("data/additional-codes.csv")
@@ -340,8 +342,6 @@ svychisq(~RACERETH + got_abx, subset(design, category == "inappropriate"))
 
 # rates of visits with antibiotics ------------------------------------
 
-# antibiotic visit rates -------------------------------------------------------
-
 abx_visits_by_race <- svyby(~got_abx, by = ~RACERETH, design, svytotal, vartype = "ci") %>%
   as_tibble() %>%
   mutate(category = "total")
@@ -369,6 +369,7 @@ abx_tests_by_race_and_cat <- crossing(
   mutate(result = map2(race, category, test_abx_visits_by_race_and_cat)) %>%
   unnest_wider(result)
 
+# put together a table of results
 left_join(
   bind_rows(abx_visits_by_race, abx_visits_by_race_and_cat),
   bind_rows(abx_tests_by_race, abx_tests_by_race_and_cat),
