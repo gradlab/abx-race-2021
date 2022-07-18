@@ -14,4 +14,3 @@ This repository includes code needed to reproduce the results from the manuscrip
 
 Scott W. Olesen <olesen@hsph.harvard.edu> <br>
 Stephen M. Kissler <skissler@hsph.harvard.edu>
-
