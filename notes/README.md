@@ -34,3 +34,9 @@ __Results__
 
 __Discussion__
 
+---
+
+Possible homes: 
+
+- JID brief report (2000 words, 2 inserts, 15 refs in IMRAD, 100-word abstract)
+- AJE research letter (1500 words, 2 inserts, no abstract)
