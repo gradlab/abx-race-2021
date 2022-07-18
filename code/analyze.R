@@ -267,8 +267,6 @@ visits_plot <- visits %>%
     axis.ticks.x = element_blank()
   )
 
-show(visits_plot)
-
 
 # proportion of visit categories with abx --------------------------------------
 
@@ -314,11 +312,9 @@ abx_plot <- bind_rows(abx_by_race, abx_by_race_and_cat) %>%
     axis.ticks.x = element_blank()
   )
 
-show(abx_plot)
-
 plot_grid(visits_plot, abx_plot, labels = "auto", ncol = 1)
 
-ggsave("fig.png", width = 7, height = 7)
+ggsave("figures/fig.png", width = 7, height = 7)
 
 
 # test for proportions ---------------------------------------------------------
