@@ -12,7 +12,6 @@ This repository includes code needed to reproduce the results from the manuscrip
 
 ## Authors
 
-Scott W. Olesen <olesen@hsph.harvard.edu>
-
+Scott W. Olesen <olesen@hsph.harvard.edu> <br>
 Stephen M. Kissler <skissler@hsph.harvard.edu>
 
