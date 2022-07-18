@@ -1,6 +1,6 @@
 # Project notes
 
-- [] Convert figure to table 
+- [ ] Convert figure to table  
 
 ## 18 July 2022 
 
