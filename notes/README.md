@@ -42,7 +42,23 @@ __Discussion__
 
 Focus for today is to ensure I can produce all outputs. 
 
+Necessary outputs: 
 
+- Antibiotic consumption rates by race/ethnicity - these should differ
+- Probability of receiving a prescription given a visit (stratified by antibiotic-appropriateness) - these don't differ, I think
+- Visit rates (stratified by antibiotic-appropriateness) - these should differ
+
+```
++------------------------------------------------+
+| RACE/ETH | ABX/YEAR | ABX/VISIT | VISITS/YEAR  |
+|          | A |S | I | A | S | I | A |  S |  I  |
+|------------------------------------------------+
+| NHW      | #  #   # | #   #   # | #    #    #  |
+| NHB      | #  #   # | #   #   # | #    #    #  |
+| HSP      | #  #   # | #   #   # | #    #    #  |
+| NHO      | #  #   # | #   #   # | #    #    #  |
++ -----------------------------------------------+
+```
 
 
 
