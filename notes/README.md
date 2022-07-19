@@ -48,7 +48,7 @@ Necessary outputs:
 - Probability of receiving a prescription given a visit (stratified by antibiotic-appropriateness) - these don't differ, I think
 - Visit rates (stratified by antibiotic-appropriateness) - these should differ
 
-I think we should just report a table like this: 
+I think we should just report a table like this (A: always appropriate; S: sometimes appropriate; I: inappropriate): 
 
 ```
 +------------------------------------------------+
