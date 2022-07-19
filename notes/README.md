@@ -48,6 +48,8 @@ Necessary outputs:
 - Probability of receiving a prescription given a visit (stratified by antibiotic-appropriateness) - these don't differ, I think
 - Visit rates (stratified by antibiotic-appropriateness) - these should differ
 
+I think we should just report a table like this: 
+
 ```
 +------------------------------------------------+
 | RACE/ETH | ABX/YEAR | ABX/VISIT | VISITS/YEAR  |
