@@ -6,6 +6,8 @@
 
 ## 18 July 2022 
 
+An outline for paper secions: 
+
 __Introduction__
 
 - Over-consumption of antibiotics is a major challenge given the risk of resistance.
@@ -37,3 +39,32 @@ __Discussion__
 ---
 
 ## 19 July 2022 
+
+Focus for today is to ensure I can produce all outputs. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
