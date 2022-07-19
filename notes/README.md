@@ -40,8 +40,6 @@ __Discussion__
 
 ## 19 July 2022 
 
-Focus for today is to ensure I can produce all outputs. 
-
 Necessary outputs: 
 
 - Antibiotic consumption rates by race/ethnicity - these should differ
@@ -61,7 +59,7 @@ I think we should just report a table like this (A: always appropriate; S: somet
 | NHO      | #  #   # | #   #   # | #    #    #  |
 + -----------------------------------------------+
 ```
-
+Might want to include totals alongside the A/S/I distinctions. 
 
 
 
