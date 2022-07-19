@@ -6,7 +6,7 @@
 
 ## 18 July 2022 
 
-An outline for paper secions: 
+An outline for paper sections: 
 
 __Introduction__
 
