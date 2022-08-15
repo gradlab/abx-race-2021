@@ -219,7 +219,7 @@ category_levels <- c("total", "appropriate", "potentially", "inappropriate")
 category_labels <- c("All visits", "Antibiotic-\nappropropriate\nvisits", "Sometimes\nantibiotic-appropriate\nvisits", "Antibiotic-\ninappropriate\nvisits")
 race_levels <- c("Non-Hispanic White", "Non-Hispanic Black", "Hispanic", "Non-Hispanic Other")
 
-visits %>%
+visits_output <- visits %>%
   left_join(test_results, by = c("RACERETH" = "race", "category")) %>%
   mutate(
     # round everything to 2 sigfigs
@@ -237,6 +237,7 @@ visits %>%
   select(category, RACERETH, visit = visit_label, diff = diff_label) %>%
   arrange(category, RACERETH)
 
+visits_output_formatted <- 
 
 # plot of visit rate results ---------------------------------------------------
 
@@ -383,7 +384,8 @@ output_df <- left_join(
   select(category, RACERETH, rate = rate_label, diff = diff_label) %>%
   arrange(category, RACERETH)
 
-output_df_formatted <- output_df %>% 
-  select(category, RACERETH, rate) %>% 
-  group_by(RACERETH) %>% 
-  pivot_longer()
+
+
+
+
+
