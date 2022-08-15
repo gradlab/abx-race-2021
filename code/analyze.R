@@ -366,7 +366,7 @@ abx_tests_by_race_and_cat <- crossing(
   unnest_wider(result)
 
 # put together a table of results
-left_join(
+output_df <- left_join(
   bind_rows(abx_visits_by_race, abx_visits_by_race_and_cat),
   bind_rows(abx_tests_by_race, abx_tests_by_race_and_cat),
   by = c("RACERETH" = "race", "category")
@@ -382,3 +382,8 @@ left_join(
   ) %>%
   select(category, RACERETH, rate = rate_label, diff = diff_label) %>%
   arrange(category, RACERETH)
+
+output_df_formatted <- output_df %>% 
+  select(category, RACERETH, rate) %>% 
+  group_by(RACERETH) %>% 
+  pivot_longer()
