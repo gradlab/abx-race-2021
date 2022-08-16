@@ -237,7 +237,11 @@ visits_output <- visits %>%
   select(category, RACERETH, visit = visit_label, diff = diff_label) %>%
   arrange(category, RACERETH)
 
-visits_output_formatted <- 
+visits_output_formatted <- visits_output %>% 
+  select(-diff) %>% 
+  pivot_wider(names_from=category, values_from=visit)
+
+write_csv(visits_output_formatted, file="output/visits_output_formatted.csv")
 
 # plot of visit rate results ---------------------------------------------------
 
@@ -278,7 +282,7 @@ abx_by_race <- svyby(~got_abx, by = ~RACERETH, design, svyciprop, vartype = "ci"
 abx_by_race_and_cat <- svyby(~got_abx, by = ~RACERETH + category, design, svyciprop, vartype = "ci") %>%
   as_tibble()
 
-bind_rows(abx_by_race, abx_by_race_and_cat) %>%
+abx_output_formatted <- bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   mutate(
     across(category, ~ factor(., levels = category_levels)),
     across(where(is.numeric), ~ signif(., 2) * 100),
@@ -287,6 +291,9 @@ bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   select(RACERETH, name = category, value = label) %>%
   pivot_wider() %>%
   select(all_of(c("RACERETH", category_levels)))
+
+
+write_csv(abx_output_formatted, file="output/abx_output_formatted.csv")
 
 abx_plot <- bind_rows(abx_by_race, abx_by_race_and_cat) %>%
   mutate(
@@ -385,7 +392,9 @@ output_df <- left_join(
   arrange(category, RACERETH)
 
 
+output_df_formatted <- output_df %>% 
+  select(-diff) %>% 
+  pivot_wider(names_from=category, values_from=rate)
 
-
-
+write_csv(output_df_formatted, file="output/output_df_formatted.csv")
 
